@@ -1394,8 +1394,20 @@ const initialChecks = async (tx) => {
 
 const processTransaction = async (tx) => {
   const checksPassed = await initialChecks(tx);
+
   if (!checksPassed) return false;
+  const {
+    transaction,
+    amountIn, // Victim's ETH
+    minAmountOut,
+    tokenToCapture,
+  } = checksPassed;
   console.log("checksPassed", checksPassed);
+  const pairAddress = await factoryUniswapFactory.getPair(
+    wethAddress,
+    tokenToCapture
+  );
+  const pair = pairFactory.attach(pairAddress);
 };
 
 // console.log("everything is working");
