@@ -1316,6 +1316,34 @@ const uniswap = new ethers.ContractFactory(
 
 let flashbotsProvider = null;
 
+const decodeUniversalRouterSwap = (input) => {
+  const abiCoder = new ethers.utils.AbiCoder();
+  const decodedParameters = abiCoder.decode(
+    // extracting from the incoming transaction hex into decimal
+    ["address", "uint256", "uint256", "bytes", "bool"],
+    input
+  );
+  const breakdown = input.substring(2).match(/.{1,64}/g);
+
+  let path = [];
+  let hasTwoPath = true;
+  if (breakdown.length != 9) {
+    const pathOne = "0x" + breakdown[breakdown.length - 2].substring(24);
+    const pathTwo = "0x" + breakdown[breakdown.length - 1].substring(24);
+    path = [pathOne, pathTwo];
+  } else {
+    hasTwoPath = false;
+  }
+
+  return {
+    recipient: parseInt(decodedParameters[(0, 16)]),
+    amountIn: decodedParameters[1],
+    minAmountOut: decodedParameters[2],
+    path,
+    hasTwoPath,
+  };
+};
+
 const initialChecks = async (tx) => {
   let transaction = null;
   let decoded = null;
@@ -1344,29 +1372,33 @@ const initialChecks = async (tx) => {
 
   console.log(decoded);
 
-  // If the swap is not for uniswapV2 we return it
-  // if (!decoded.args.commands.includes('08')) return false
-  // let swapPositionInCommands = decoded.args.commands.substring(2).indexOf('08') / 2
-  // let inputPosition = decoded.args.inputs[swapPositionInCommands]
-  // decodedSwap = decodeUniversalRouterSwap(inputPosition)
-  // if (!decodedSwap.hasTwoPath) return false
-  // if (decodedSwap.recipient === 2) return false
-  // if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase()) return false
+  if (!decoded.args.commands.includes("08")) return false; // 08 means transactions are swapping using v2 which means we are not looking for v2
+  let swapPositionInCommands =
+    decoded.args.commands.substring(2).indexOf("08") / 2; // / 2 indicates we are looking for 2nd array element
 
-  // return {
-  //     transaction,
-  //     amountIn: transaction.value,
-  //     minAmountOut: decodedSwap.minAmountOut,
-  //     tokenToCapture: decodedSwap.path[1],
-  // }
+  let inputPosition = decoded.args.inputs[swapPositionInCommands]; // using 2nd element of decoded transaction we get what token are we getting in swap, how much we are getting, and all of the information
+
+  decodedSwap = decodeUniversalRouterSwap(inputPosition); // this will give us all the information in readable form
+  if (!decodedSwap.hasTwoPath) return false;
+  if (decodedSwap.recipient === 2) return false; // a check user must swap eth into some other token not any other token to ether
+  if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase())
+    return false; // first token should be ether
+
+  return {
+    transaction,
+    amountIn: transaction.value,
+    minAmountOut: decodedSwap.minAmountOut,
+    tokenToCapture: decodedSwap.path[1],
+  };
 };
 
 const processTransaction = async (tx) => {
   const checksPassed = await initialChecks(tx);
+  if (!checksPassed) return false;
   console.log("checksPassed", checksPassed);
 };
 
-console.log("everything is working");
+// console.log("everything is working");
 
 const start = async () => {
   flashbotsProvider = await FlashbotsBundleProvider.create(
