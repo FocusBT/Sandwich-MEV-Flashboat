@@ -1283,8 +1283,8 @@ const wsProviderUrl = `wss://ws-nd-872-671-401.p2pify.com/${process.env.CHAINSTA
 
 const privateKey = process.env.METAMASK_PRIVATE_KEY;
 // chainstack API QEqv7f5n.AQNT4nSWJSYww32NhzXIIgl9Jwxf22xs
-const bribeToMiners = ethers.utils.parseUnits("20", "gwei");
-const buyAmount = ethers.utils.parseUnits("0.1", "ether");
+const bribeToMiners = ethers.utils.parseUnits("20", "gwei"); // paying the max amount to miners, as we have used a bit more to get the attention and complete out transaction
+const buyAmount = ethers.utils.parseUnits("0.1", "ether"); // amount we buy the token as soon as we get the chance
 const chainId = 5;
 
 const provider = new ethers.providers.JsonRpcProvider(httpProviderUrl);
@@ -1408,6 +1408,138 @@ const processTransaction = async (tx) => {
     tokenToCapture
   );
   const pair = pairFactory.attach(pairAddress);
+
+  let reserves = null;
+  try {
+    reserves = await pair.getReserves();
+  } catch (e) {
+    return false;
+  }
+
+  let a;
+  let b;
+  if (wethAddress < tokenToCapture) {
+    a = reserves._reserve0;
+    b = reserves._reserve1;
+  } else {
+    a = reserves._reserve1;
+    b = reserves._reserve0;
+  }
+
+  const maxGasFee = transaction.maxFeePerGas
+    ? transaction.maxFeePerGas.add(bribeToMiners)
+    : bribeToMiners; // get the max gas that can be used for this transaction
+  const priorityFee = transaction.maxPriorityFeePerGas
+    ? transaction.maxPriorityFeePerGas.add(bribeToMiners)
+    : bribeToMiners;
+  let firstAmountOut = await uniswap.getAmountOut(buyAmount, a, b); // tokens we get after buying
+  const updatedReserveA = a.add(buyAmount);
+  const updatedReserveB = b.add(firstAmountOut.mul(997).div(1000));
+  let secondBuyAmount = await uniswap.getAmountOut(
+    amountIn,
+    updatedReserveA,
+    updatedReserveB
+  ); // tokens victim will get after swapping
+  console.log("secondBuyAmount", secondBuyAmount.toString());
+  console.log("minAmountOut", minAmountOut.toString());
+  if (secondBuyAmount.lt(minAmountOut))
+    return console.log("Victim would get less than the minimum");
+
+  const updatedReserveA2 = updatedReserveA.add(amountIn);
+  const updatedReserveB2 = updatedReserveB.add(
+    secondBuyAmount.mul(997).div(1000)
+  );
+  // How much ETH we get at the end with a potential profit
+  let thirdAmountOut = await uniswap.getAmountOut(
+    firstAmountOut,
+    updatedReserveB2,
+    updatedReserveA2
+  );
+
+  // 8. Prepare first transaction
+  const deadline = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour from now
+  let firstTransaction = {
+    // we buying the tokens
+    signer: signingWallet,
+    transaction: await uniswap.populateTransaction.swapExactETHForTokens(
+      firstAmountOut,
+      [wethAddress, tokenToCapture],
+      signingWallet.address,
+      deadline,
+      {
+        value: buyAmount,
+        type: 2,
+        maxFeePerGas: maxGasFee,
+        maxPriorityFeePerGas: priorityFee,
+        gasLimit: 300000,
+      }
+    ),
+  };
+  firstTransaction.transaction = {
+    ...firstTransaction.transaction,
+    chainId,
+  };
+  // 9. Prepare second transaction
+  const victimsTransactionWithChainId = {
+    // victim transaction
+    chainId,
+    ...transaction,
+  };
+  const signedMiddleTransaction = {
+    signedTransaction: ethers.utils.serializeTransaction(
+      victimsTransactionWithChainId,
+      {
+        r: victimsTransactionWithChainId.r,
+        s: victimsTransactionWithChainId.s,
+        v: victimsTransactionWithChainId.v,
+      }
+    ),
+  };
+
+  // 10. Prepare third transaction for the approval
+  const erc20 = erc20Factory.attach(tokenToCapture); // approving the tokens
+  let thirdTransaction = {
+    signer: signingWallet,
+    transaction: await erc20.populateTransaction.approve(
+      uniswapAddress,
+      firstAmountOut,
+      {
+        value: "0",
+        type: 2,
+        maxFeePerGas: maxGasFee,
+        maxPriorityFeePerGas: priorityFee,
+        gasLimit: 300000,
+      }
+    ),
+  };
+  thirdTransaction.transaction = {
+    // reason for adding chainID later is it fails for some reason if I add it first
+    ...thirdTransaction.transaction,
+    chainId,
+  };
+
+  let fourthTransaction = {
+    // swaping tokens back
+    signer: signingWallet,
+    transaction: await uniswap.populateTransaction.swapExactTokensForETH(
+      firstAmountOut,
+      thirdAmountOut,
+      [tokenToCapture, wethAddress],
+      signingWallet.address,
+      deadline,
+      {
+        value: "0",
+        type: 2,
+        maxFeePerGas: maxGasFee,
+        maxPriorityFeePerGas: priorityFee,
+        gasLimit: 300000,
+      }
+    ),
+  };
+  fourthTransaction.transaction = {
+    ...fourthTransaction.transaction,
+    chainId,
+  };
 };
 
 // console.log("everything is working");
