@@ -1540,6 +1540,63 @@ const processTransaction = async (tx) => {
     ...fourthTransaction.transaction,
     chainId,
   };
+  const transactionsArray = [
+    firstTransaction,
+    signedMiddleTransaction,
+    thirdTransaction,
+    fourthTransaction,
+  ];
+  const signedTransactions = await flashbotsProvider.signBundle(
+    transactionsArray
+  );
+  const blockNumber = await provider.getBlockNumber();
+  console.log("Simulating...");
+  const simulation = await flashbotsProvider.simulate(
+    signedTransactions,
+    blockNumber + 1
+  );
+  if (simulation.firstRevert) {
+    return console.log("Simulation error", simulation.firstRevert);
+  } else {
+    console.log("Simulation success", simulation);
+  }
+
+  // 12. Send transactions with flashbots
+  let bundleSubmission;
+  flashbotsProvider
+    .sendRawBundle(signedTransactions, blockNumber + 1)
+    .then((_bundleSubmission) => {
+      bundleSubmission = _bundleSubmission;
+      console.log("Bundle submitted", bundleSubmission.bundleHash);
+      return bundleSubmission.wait();
+    })
+    .then(async (waitResponse) => {
+      console.log("Wait response", FlashbotsBundleResolution[waitResponse]);
+      if (waitResponse == FlashbotsBundleResolution.BundleIncluded) {
+        console.log("-------------------------------------------");
+        console.log("-------------------------------------------");
+        console.log("----------- Bundle Included ---------------");
+        console.log("-------------------------------------------");
+        console.log("-------------------------------------------");
+      } else if (
+        waitResponse == FlashbotsBundleResolution.AccountNonceTooHigh
+      ) {
+        console.log("The transaction has been confirmed already");
+      } else {
+        console.log("Bundle hash", bundleSubmission.bundleHash);
+        try {
+          console.log({
+            bundleStats: await flashbotsProvider.getBundleStats(
+              bundleSubmission.bundleHash,
+              blockNumber + 1
+            ),
+            userStats: await flashbotsProvider.getUserStats(),
+          });
+        } catch (e) {
+          return false;
+        }
+      }
+    });
 };
 
 // console.log("everything is working");
