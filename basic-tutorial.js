@@ -1277,10 +1277,7 @@ const wethAddress = "0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6";
 const uniswapAddress = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"; // UniswapV2Router02
 const uniswapFactoryAddress = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f";
 const universalRouterAddress = "0x4648a43B2C14Da09FdF82B161150d3F634f40491";
-console.log(
-  process.env.CHAINSTACK_PRIVATE_KEY,
-  process.env.METAMASK_PRIVATE_KEY
-);
+
 const httpProviderUrl = `https://nd-872-671-401.p2pify.com/${process.env.CHAINSTACK_PRIVATE_KEY}`;
 const wsProviderUrl = `wss://ws-nd-872-671-401.p2pify.com/${process.env.CHAINSTACK_PRIVATE_KEY}`;
 
@@ -1293,25 +1290,95 @@ const chainId = 5;
 const provider = new ethers.providers.JsonRpcProvider(httpProviderUrl);
 const wsProvider = new ethers.providers.WebSocketProvider(wsProviderUrl);
 
-// const signingWallet = new Wallet(privateKey).connect(provider);
-// const uniswapV3Interface = new ethers.utils.Interface(uniswapV3Abi);
-// const factoryUniswapFactory = new ethers.ContractFactory(
-//   UniswapFactoryAbi,
-//   UniswapFactoryBytecode,
-//   signingWallet
-// ).attach(uniswapFactoryAddress);
-// const erc20Factory = new ethers.ContractFactory(
-//   erc20Abi,
-//   erc20Bytecode,
-//   signingWallet
-// );
-// const pairFactory = new ethers.ContractFactory(
-//   pairAbi,
-//   pairBytecode,
-//   signingWallet
-// );
-// const uniswap = new ethers.ContractFactory(
-//   UniswapAbi,
-//   UniswapBytecode,
-//   signingWallet
-// ).attach(uniswapAddress);
+const signingWallet = new Wallet(privateKey).connect(provider);
+
+const uniswapV3Interface = new ethers.utils.Interface(uniswapV3Abi);
+const factoryUniswapFactory = new ethers.ContractFactory(
+  UniswapFactoryAbi,
+  UniswapFactoryBytecode,
+  signingWallet
+).attach(uniswapFactoryAddress);
+const erc20Factory = new ethers.ContractFactory(
+  erc20Abi,
+  erc20Bytecode,
+  signingWallet
+);
+const pairFactory = new ethers.ContractFactory(
+  pairAbi,
+  pairBytecode,
+  signingWallet
+);
+const uniswap = new ethers.ContractFactory(
+  UniswapAbi,
+  UniswapBytecode,
+  signingWallet
+).attach(uniswapAddress);
+
+let flashbotsProvider = null;
+
+const initialChecks = async (tx) => {
+  let transaction = null;
+  let decoded = null;
+  let decodedSwap = null;
+
+  try {
+    transaction = await provider.getTransaction(tx);
+  } catch (e) {
+    return false;
+  }
+
+  if (!transaction || !transaction.to) return false;
+  if (Number(transaction.value) == 0) return false; // not swawpping
+  if (transaction.to.toLowerCase() != universalRouterAddress.toLowerCase()) {
+    // to make sure this transaction is going to the universal router
+    return false;
+  }
+
+  //   console.log(transaction);
+
+  try {
+    decoded = uniswapV3Interface.parseTransaction(transaction);
+  } catch (e) {
+    return false;
+  }
+
+  console.log(decoded);
+
+  // If the swap is not for uniswapV2 we return it
+  // if (!decoded.args.commands.includes('08')) return false
+  // let swapPositionInCommands = decoded.args.commands.substring(2).indexOf('08') / 2
+  // let inputPosition = decoded.args.inputs[swapPositionInCommands]
+  // decodedSwap = decodeUniversalRouterSwap(inputPosition)
+  // if (!decodedSwap.hasTwoPath) return false
+  // if (decodedSwap.recipient === 2) return false
+  // if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase()) return false
+
+  // return {
+  //     transaction,
+  //     amountIn: transaction.value,
+  //     minAmountOut: decodedSwap.minAmountOut,
+  //     tokenToCapture: decodedSwap.path[1],
+  // }
+};
+
+const processTransaction = async (tx) => {
+  const checksPassed = await initialChecks(tx);
+  console.log("checksPassed", checksPassed);
+};
+
+console.log("everything is working");
+
+const start = async () => {
+  flashbotsProvider = await FlashbotsBundleProvider.create(
+    provider,
+    signingWallet,
+    flashbotsUrl
+  );
+  console.log("Listening on transaction for the chain id", chainId);
+  wsProvider.on("pending", (tx) => {
+    console.log("tx", tx);
+    processTransaction(tx);
+  });
+};
+
+start();
