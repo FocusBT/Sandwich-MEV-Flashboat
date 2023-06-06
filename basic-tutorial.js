@@ -1282,7 +1282,7 @@ const httpProviderUrl = `https://nd-872-671-401.p2pify.com/${process.env.CHAINST
 const wsProviderUrl = `wss://ws-nd-872-671-401.p2pify.com/${process.env.CHAINSTACK_PRIVATE_KEY}`;
 
 const privateKey = process.env.METAMASK_PRIVATE_KEY;
-const bribeToMiners = ethers.utils.parseUnits("20", "gwei"); // paying the max amount to miners, as we have used a bit more to get the attention and complete out transaction
+const bribeToMiners = ethers.utils.parseUnits("70", "gwei"); // paying the max amount to miners, as we have used a bit more to get the attention and complete out transaction
 const buyAmount = ethers.utils.parseUnits("0.01", "ether"); // amount we buy the token as soon as we get the chance
 const chainId = 5;
 
@@ -1351,7 +1351,7 @@ const initialChecks = async (tx) => {
   try {
     transaction = await provider.getTransaction(tx);
   } catch (e) {
-    console.log("main condition failed", tx);
+    // console.log("main condition failed", tx);
     return false;
   }
 
