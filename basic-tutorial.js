@@ -2,7 +2,7 @@ const { Wallet, ethers, providers } = require("ethers");
 require("dotenv").config();
 const {
   FlashbotsBundleProvider,
-  FlashbotsbundleResolutiom,
+  FlashbotsBundleResolution,
 } = require("@flashbots/ethers-provider-bundle");
 
 //bytecodes
@@ -1282,9 +1282,8 @@ const httpProviderUrl = `https://nd-872-671-401.p2pify.com/${process.env.CHAINST
 const wsProviderUrl = `wss://ws-nd-872-671-401.p2pify.com/${process.env.CHAINSTACK_PRIVATE_KEY}`;
 
 const privateKey = process.env.METAMASK_PRIVATE_KEY;
-// chainstack API QEqv7f5n.AQNT4nSWJSYww32NhzXIIgl9Jwxf22xs
 const bribeToMiners = ethers.utils.parseUnits("20", "gwei"); // paying the max amount to miners, as we have used a bit more to get the attention and complete out transaction
-const buyAmount = ethers.utils.parseUnits("0.1", "ether"); // amount we buy the token as soon as we get the chance
+const buyAmount = ethers.utils.parseUnits("0.01", "ether"); // amount we buy the token as soon as we get the chance
 const chainId = 5;
 
 const provider = new ethers.providers.JsonRpcProvider(httpProviderUrl);
@@ -1352,13 +1351,21 @@ const initialChecks = async (tx) => {
   try {
     transaction = await provider.getTransaction(tx);
   } catch (e) {
+    console.log("main condition failed", tx);
     return false;
   }
 
-  if (!transaction || !transaction.to) return false;
-  if (Number(transaction.value) == 0) return false; // not swawpping
+  if (!transaction || !transaction.to) {
+    // console.log("1st condition failed", tx);
+    return false;
+  }
+  if (Number(transaction.value) == 0) {
+    // console.log("2nd condition failed", tx);
+    return false;
+  } // not swawpping
   if (transaction.to.toLowerCase() != universalRouterAddress.toLowerCase()) {
     // to make sure this transaction is going to the universal router
+    // console.log("3rd condition failed", tx);
     return false;
   }
 
@@ -1367,22 +1374,34 @@ const initialChecks = async (tx) => {
   try {
     decoded = uniswapV3Interface.parseTransaction(transaction);
   } catch (e) {
+    // console.log("4th condition failed", tx);
     return false;
   }
 
-  console.log(decoded);
-
-  if (!decoded.args.commands.includes("08")) return false; // 08 means transactions are swapping using v2 which means we are not looking for v2
+  if (!decoded.args.commands.includes("08")) {
+    // console.log("5th condition failed", tx);
+    return false;
+  } // 08 means transactions are swapping using v2 which means we are not looking for v2
   let swapPositionInCommands =
     decoded.args.commands.substring(2).indexOf("08") / 2; // / 2 indicates we are looking for 2nd array element
 
   let inputPosition = decoded.args.inputs[swapPositionInCommands]; // using 2nd element of decoded transaction we get what token are we getting in swap, how much we are getting, and all of the information
 
   decodedSwap = decodeUniversalRouterSwap(inputPosition); // this will give us all the information in readable form
-  if (!decodedSwap.hasTwoPath) return false;
-  if (decodedSwap.recipient === 2) return false; // a check user must swap eth into some other token not any other token to ether
-  if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase())
+  if (!decodedSwap.hasTwoPath) {
+    // console.log("6th condition failed", tx);
+    return false;
+  }
+  if (decodedSwap.recipient === 2) {
+    // console.log("7th condition failed", tx);
+    return false;
+  } // a check user must swap eth into some other token not any other token to ether
+  if (decodedSwap.path[0].toLowerCase() != wethAddress.toLowerCase()) {
+    // console.log("8th condition failed", tx);
     return false; // first token should be ether
+  }
+
+  // console.log("passed", tx);
 
   return {
     transaction,
@@ -1394,18 +1413,27 @@ const initialChecks = async (tx) => {
 
 const processTransaction = async (tx) => {
   const checksPassed = await initialChecks(tx);
-
+  // console.log(checksPassed);
   if (!checksPassed) return false;
+  console.log("check passed", checksPassed);
+
   const {
     transaction,
     amountIn, // Victim's ETH
     minAmountOut,
     tokenToCapture,
   } = checksPassed;
-  console.log("checksPassed", checksPassed);
+  // console.log("checksPassed", checksPassed);
   const pairAddress = await factoryUniswapFactory.getPair(
     wethAddress,
     tokenToCapture
+  );
+  console.log(
+    "Check passed",
+    transaction,
+    amountIn,
+    tokenToCapture,
+    minAmountOut
   );
   const pair = pairFactory.attach(pairAddress);
 
@@ -1609,7 +1637,7 @@ const start = async () => {
   );
   console.log("Listening on transaction for the chain id", chainId);
   wsProvider.on("pending", (tx) => {
-    console.log("tx", tx);
+    // console.log("tx", tx);
     processTransaction(tx);
   });
 };
